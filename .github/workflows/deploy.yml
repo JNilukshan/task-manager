@@ -1,5 +1,3 @@
-# .github/workflows/deploy.yml
-
 name: Deploy fullstack app to Azure VM
 
 on:
@@ -24,30 +22,30 @@ jobs:
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
           rm -rf ~/task-app
-          mkdir ~/task-app
+          mkdir -p ~/task-app
         EOF
 
         scp -r ./client ./server ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }}:~/task-app/
 
     - name: Write .env file on VM
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
-          echo "${{ secrets.ENV_FILE }}" > ~/task-app/server/.env
-        EOF
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} "cat > ~/task-app/server/.env" <<< "${{ secrets.ENV_FILE }}"
 
-    - name: Install dependencies and restart app
+    - name: Install dependencies and start app
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
-          cd ~/task-app
-
-          cd server
+          set -e  # Stop on error
+          
+          cd ~/task-app/server
           npm install
 
           cd ../client
           npm install
           npm run build
 
+          cd ~/task-app
+
           pm2 delete all || true
           pm2 serve ~/task-app/client/build 3000 --spa --name frontend
-          pm2 start ~/task-app/server/server.js --name backend
+          pm2 start server/server.js --name backend
         EOF
