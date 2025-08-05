@@ -51,24 +51,25 @@ jobs:
           fi
         EOF
 
-    - name: Install frontend dependencies and build if needed
+    - name: Install and build frontend
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
-          cd ~/task-app/client
-          if [ -f package-lock.json ]; then
-            echo "Checking for frontend dependency changes..."
-            if ! cmp -s package-lock.json .last-package-lock.json; then
-              echo "Changes detected, installing frontend dependencies..."
-              npm install
-              cp package-lock.json .last-package-lock.json
-            else
-              echo "No changes in frontend dependencies."
-            fi
-          fi
+        cd ~/task-app/client
 
-          echo "Rebuilding frontend..."
-          npm run build
+        echo "Checking for frontend dependency changes..."
+
+        if [ ! -f .last-package-lock.json ] || ! cmp -s package-lock.json .last-package-lock.json; then
+            echo "Installing frontend dependencies..."
+            npm install --include=dev
+            cp package-lock.json .last-package-lock.json
+        else
+            echo "No changes in frontend dependencies."
+        fi
+
+        echo "Rebuilding frontend..."
+        npm run build
         EOF
+
 
     - name: Start or restart PM2 services
       run: |
