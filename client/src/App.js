@@ -7,7 +7,7 @@ function App() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE_URL = 'http://localhost:5000/api';
+  const API_BASE_URL = 'http://172.174.17.42/api';
 
   // Fetch all tasks
   const fetchTasks = async () => {
@@ -76,7 +76,7 @@ function App() {
     <div className="App">
       <header className="App-header">
         <h1>Task Manager</h1>
-        <p>Manage your daily tasks efficiently</p>
+        <p>Manage your daily tasks here</p>
       </header>
       
       <main className="App-main">
