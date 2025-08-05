@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
+    - name: Checkout code
       uses: actions/checkout@v3
 
     - name: Set up SSH
@@ -18,34 +18,74 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-    - name: Copy project files to VM
+    - name: Rsync project files to VM (no full delete)
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
-          rm -rf ~/task-app
-          mkdir -p ~/task-app
+        rsync -avz --delete --exclude='.git' \
+          -e "ssh -o StrictHostKeyChecking=no" \
+          ./client ./server ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }}:~/task-app/
+
+    - name: Upload .env only if not exists
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << EOF
+          if [ ! -f ~/task-app/server/.env ]; then
+            echo "${{ secrets.ENV_FILE }}" > ~/task-app/server/.env
+            echo ".env file created"
+          else
+            echo ".env already exists, skipping"
+          fi
         EOF
 
-        scp -r ./client ./server ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }}:~/task-app/
-
-    - name: Write .env file on VM
-      run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} "cat > ~/task-app/server/.env" <<< "${{ secrets.ENV_FILE }}"
-
-    - name: Install dependencies and start app
+    - name: Install backend dependencies if changed
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
-          set -e  # Stop on error
-          
           cd ~/task-app/server
-          npm install
+          if [ -f package-lock.json ]; then
+            echo "Checking for backend dependency changes..."
+            if ! cmp -s package-lock.json .last-package-lock.json; then
+              echo "Changes detected, installing backend dependencies..."
+              npm install
+              cp package-lock.json .last-package-lock.json
+            else
+              echo "No changes in backend dependencies."
+            fi
+          fi
+        EOF
 
-          cd ../client
-          npm install
+    - name: Install frontend dependencies and build if needed
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
+          cd ~/task-app/client
+          if [ -f package-lock.json ]; then
+            echo "Checking for frontend dependency changes..."
+            if ! cmp -s package-lock.json .last-package-lock.json; then
+              echo "Changes detected, installing frontend dependencies..."
+              npm install
+              cp package-lock.json .last-package-lock.json
+            else
+              echo "No changes in frontend dependencies."
+            fi
+          fi
+
+          echo "Rebuilding frontend..."
           npm run build
+        EOF
 
+    - name: Start or restart PM2 services
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
           cd ~/task-app
 
-          pm2 delete all || true
-          pm2 serve ~/task-app/client/build 3000 --spa --name frontend
-          pm2 start server/server.js --name backend
+          if [ -f ecosystem.config.js ]; then
+            pm2 startOrReload ecosystem.config.js || {
+              echo "Fallback: restarting manually..."
+              pm2 delete all || true
+              pm2 serve ~/task-app/client/build 3000 --spa --name frontend
+              pm2 start server/server.js --name backend
+            }
+          else
+            echo "No ecosystem.config.js found. Using manual PM2 start..."
+            pm2 delete all || true
+            pm2 serve ~/task-app/client/build 3000 --spa --name frontend
+            pm2 start server/server.js --name backend
+          fi
         EOF
