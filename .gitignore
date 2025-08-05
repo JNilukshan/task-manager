@@ -1,0 +1,18 @@
+# Node modules (both client and server)
+client/node_modules/
+server/node_modules/
+
+# Environment variables
+server/.env
+
+# Lock files (optional, but usually kept to ensure consistent installs)
+# If you want to ignore them:
+client/package-lock.json
+server/package-lock.json
+
+# Logs
+*.log
+
+# OS/system files
+.DS_Store
+Thumbs.db
