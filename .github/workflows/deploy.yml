@@ -1,0 +1,53 @@
+# .github/workflows/deploy.yml
+
+name: Deploy fullstack app to Azure VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.7.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Copy project files to VM
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
+          rm -rf ~/task-app
+          mkdir ~/task-app
+        EOF
+
+        scp -r ./client ./server ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }}:~/task-app/
+
+    - name: Write .env file on VM
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
+          echo "${{ secrets.ENV_FILE }}" > ~/task-app/server/.env
+        EOF
+
+    - name: Install dependencies and restart app
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.VM_IP }} << 'EOF'
+          cd ~/task-app
+
+          cd server
+          npm install
+
+          cd ../client
+          npm install
+          npm run build
+
+          pm2 delete all || true
+          pm2 serve ~/task-app/client/build 3000 --spa --name frontend
+          pm2 start ~/task-app/server/server.js --name backend
+        EOF
